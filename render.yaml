@@ -118,6 +118,6 @@ services:
 # Redis database
 databases:
   - name: market-data-redis
-    type: redis
+    databaseType: redis
     plan: standard
     ipAllowList: []  # Only allow internal connections
