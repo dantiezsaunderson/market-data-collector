@@ -1,0 +1,25 @@
+# Dockerfile for Worker service
+# Handles scheduled jobs and background processing
+
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm ci --production
+
+# Copy worker files
+COPY netlify/scheduled-functions ./scheduled-functions
+COPY netlify/functions ./functions
+COPY worker.js .
+COPY .env* ./
+
+# Install additional dependencies for worker functionality
+RUN npm install firebase-admin node-cron nodemailer axios redis bull
+
+# Start the worker
+CMD ["node", "worker.js"]

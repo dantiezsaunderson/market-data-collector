@@ -1,0 +1,381 @@
+# Backup and Recovery Procedures
+# This file contains backup and recovery procedures for the Market Data Collector Docker deployment
+
+# Backup Configuration
+backup:
+  # Scheduled backups
+  scheduled:
+    enabled: true
+    frequency: "0 0 * * *"  # Daily at midnight
+    retention_days: 30
+    
+  # Data to backup
+  data:
+    # Redis data
+    redis:
+      enabled: true
+      method: "redis-cli"
+      command: "redis-cli -h redis save && cp /data/dump.rdb /backups/redis/redis-dump-$(date +%Y%m%d-%H%M%S).rdb"
+      
+    # Application data
+    application:
+      enabled: true
+      directories:
+        - "/app/data"
+      exclude_patterns:
+        - "*.tmp"
+        - "*.log"
+        
+    # Configuration
+    configuration:
+      enabled: true
+      files:
+        - "/app/.env"
+        - "/app/security-config.yml"
+        - "/app/docker-network.yml"
+        
+  # Backup storage
+  storage:
+    # Local storage
+    local:
+      enabled: true
+      path: "/backups"
+      
+    # Cloud storage (Firebase Storage)
+    cloud:
+      enabled: true
+      provider: "firebase"
+      bucket: "${FIREBASE_STORAGE_BUCKET}"
+      path: "backups"
+      
+    # Encryption
+    encryption:
+      enabled: true
+      method: "AES-256-GCM"
+      key_env_var: "BACKUP_ENCRYPTION_KEY"
+      
+# Recovery Procedures
+recovery:
+  # Automated recovery
+  automated:
+    enabled: true
+    health_check:
+      endpoint: "/health"
+      failure_threshold: 3
+      interval_seconds: 60
+    actions:
+      - "restart_container"
+      - "restore_latest_backup"
+      
+  # Manual recovery
+  manual:
+    # Redis recovery
+    redis:
+      command: "cp /backups/redis/[BACKUP_FILE] /data/dump.rdb && redis-cli -h redis restart"
+      
+    # Application data recovery
+    application:
+      command: "tar -xzf /backups/application/[BACKUP_FILE] -C /app/data"
+      
+    # Full system recovery
+    full_system:
+      steps:
+        - "Stop all containers: docker-compose down"
+        - "Restore Redis backup: cp /backups/redis/[BACKUP_FILE] /data/dump.rdb"
+        - "Restore application data: tar -xzf /backups/application/[BACKUP_FILE] -C /app/data"
+        - "Restore configuration: cp /backups/configuration/[BACKUP_FILE] /app/.env"
+        - "Start all containers: docker-compose up -d"
+        
+# Disaster Recovery
+disaster_recovery:
+  # Recovery Point Objective (RPO)
+  rpo_hours: 24
+  
+  # Recovery Time Objective (RTO)
+  rto_hours: 4
+  
+  # Alternative deployment
+  alternative_deployment:
+    enabled: true
+    platform: "render"
+    region: "alternative"
+    
+  # Cross-region replication
+  cross_region:
+    enabled: true
+    regions:
+      - "us-west"
+      - "us-east"
+      
+  # Backup verification
+  verification:
+    enabled: true
+    frequency: "0 12 * * 0"  # Weekly on Sunday at noon
+    method: "restore_and_verify"
+    
+# Implementation Scripts
+scripts:
+  # Backup script
+  backup:
+    filename: "backup.sh"
+    content: |
+      #!/bin/bash
+      
+      # Backup script for Market Data Collector
+      
+      # Set variables
+      TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+      BACKUP_DIR="/backups"
+      REDIS_BACKUP_DIR="$BACKUP_DIR/redis"
+      APP_BACKUP_DIR="$BACKUP_DIR/application"
+      CONFIG_BACKUP_DIR="$BACKUP_DIR/configuration"
+      
+      # Create backup directories if they don't exist
+      mkdir -p $REDIS_BACKUP_DIR
+      mkdir -p $APP_BACKUP_DIR
+      mkdir -p $CONFIG_BACKUP_DIR
+      
+      # Backup Redis
+      echo "Backing up Redis..."
+      redis-cli -h redis save
+      cp /data/dump.rdb $REDIS_BACKUP_DIR/redis-dump-$TIMESTAMP.rdb
+      
+      # Backup application data
+      echo "Backing up application data..."
+      tar -czf $APP_BACKUP_DIR/app-data-$TIMESTAMP.tar.gz /app/data --exclude="*.tmp" --exclude="*.log"
+      
+      # Backup configuration
+      echo "Backing up configuration..."
+      tar -czf $CONFIG_BACKUP_DIR/config-$TIMESTAMP.tar.gz /app/.env /app/security-config.yml /app/docker-network.yml
+      
+      # Encrypt backups if encryption is enabled
+      if [ "$BACKUP_ENCRYPTION_ENABLED" = "true" ]; then
+        echo "Encrypting backups..."
+        openssl enc -aes-256-gcm -salt -in $REDIS_BACKUP_DIR/redis-dump-$TIMESTAMP.rdb -out $REDIS_BACKUP_DIR/redis-dump-$TIMESTAMP.rdb.enc -k $BACKUP_ENCRYPTION_KEY
+        openssl enc -aes-256-gcm -salt -in $APP_BACKUP_DIR/app-data-$TIMESTAMP.tar.gz -out $APP_BACKUP_DIR/app-data-$TIMESTAMP.tar.gz.enc -k $BACKUP_ENCRYPTION_KEY
+        openssl enc -aes-256-gcm -salt -in $CONFIG_BACKUP_DIR/config-$TIMESTAMP.tar.gz -out $CONFIG_BACKUP_DIR/config-$TIMESTAMP.tar.gz.enc -k $BACKUP_ENCRYPTION_KEY
+        
+        # Remove unencrypted files
+        rm $REDIS_BACKUP_DIR/redis-dump-$TIMESTAMP.rdb
+        rm $APP_BACKUP_DIR/app-data-$TIMESTAMP.tar.gz
+        rm $CONFIG_BACKUP_DIR/config-$TIMESTAMP.tar.gz
+      fi
+      
+      # Upload to cloud storage if enabled
+      if [ "$CLOUD_BACKUP_ENABLED" = "true" ]; then
+        echo "Uploading backups to cloud storage..."
+        # This would be implemented with Firebase Storage SDK or gsutil
+        # For example: gsutil cp $REDIS_BACKUP_DIR/redis-dump-$TIMESTAMP.rdb.enc gs://$FIREBASE_STORAGE_BUCKET/backups/redis/
+      fi
+      
+      # Clean up old backups
+      echo "Cleaning up old backups..."
+      find $REDIS_BACKUP_DIR -type f -mtime +$BACKUP_RETENTION_DAYS -delete
+      find $APP_BACKUP_DIR -type f -mtime +$BACKUP_RETENTION_DAYS -delete
+      find $CONFIG_BACKUP_DIR -type f -mtime +$BACKUP_RETENTION_DAYS -delete
+      
+      echo "Backup completed successfully at $(date)"
+      
+  # Recovery script
+  recovery:
+    filename: "recovery.sh"
+    content: |
+      #!/bin/bash
+      
+      # Recovery script for Market Data Collector
+      
+      # Set variables
+      BACKUP_DIR="/backups"
+      REDIS_BACKUP_DIR="$BACKUP_DIR/redis"
+      APP_BACKUP_DIR="$BACKUP_DIR/application"
+      CONFIG_BACKUP_DIR="$BACKUP_DIR/configuration"
+      
+      # Function to list available backups
+      list_backups() {
+        echo "Available Redis backups:"
+        ls -la $REDIS_BACKUP_DIR
+        
+        echo "Available application data backups:"
+        ls -la $APP_BACKUP_DIR
+        
+        echo "Available configuration backups:"
+        ls -la $CONFIG_BACKUP_DIR
+      }
+      
+      # Function to restore Redis backup
+      restore_redis() {
+        if [ -z "$1" ]; then
+          echo "Error: No backup file specified"
+          return 1
+        fi
+        
+        BACKUP_FILE="$REDIS_BACKUP_DIR/$1"
+        
+        if [ ! -f "$BACKUP_FILE" ]; then
+          echo "Error: Backup file $BACKUP_FILE does not exist"
+          return 1
+        fi
+        
+        echo "Restoring Redis from $BACKUP_FILE..."
+        
+        # Decrypt if encrypted
+        if [[ "$BACKUP_FILE" == *.enc ]]; then
+          echo "Decrypting backup file..."
+          openssl enc -d -aes-256-gcm -in $BACKUP_FILE -out ${BACKUP_FILE%.enc} -k $BACKUP_ENCRYPTION_KEY
+          BACKUP_FILE=${BACKUP_FILE%.enc}
+        fi
+        
+        # Stop Redis
+        echo "Stopping Redis..."
+        docker-compose stop redis
+        
+        # Restore backup
+        echo "Copying backup file to Redis data directory..."
+        cp $BACKUP_FILE /data/dump.rdb
+        
+        # Start Redis
+        echo "Starting Redis..."
+        docker-compose start redis
+        
+        echo "Redis restore completed successfully"
+      }
+      
+      # Function to restore application data
+      restore_app_data() {
+        if [ -z "$1" ]; then
+          echo "Error: No backup file specified"
+          return 1
+        fi
+        
+        BACKUP_FILE="$APP_BACKUP_DIR/$1"
+        
+        if [ ! -f "$BACKUP_FILE" ]; then
+          echo "Error: Backup file $BACKUP_FILE does not exist"
+          return 1
+        fi
+        
+        echo "Restoring application data from $BACKUP_FILE..."
+        
+        # Decrypt if encrypted
+        if [[ "$BACKUP_FILE" == *.enc ]]; then
+          echo "Decrypting backup file..."
+          openssl enc -d -aes-256-gcm -in $BACKUP_FILE -out ${BACKUP_FILE%.enc} -k $BACKUP_ENCRYPTION_KEY
+          BACKUP_FILE=${BACKUP_FILE%.enc}
+        fi
+        
+        # Stop application
+        echo "Stopping application..."
+        docker-compose stop app worker
+        
+        # Restore backup
+        echo "Extracting backup file to application data directory..."
+        tar -xzf $BACKUP_FILE -C /
+        
+        # Start application
+        echo "Starting application..."
+        docker-compose start app worker
+        
+        echo "Application data restore completed successfully"
+      }
+      
+      # Function to restore configuration
+      restore_config() {
+        if [ -z "$1" ]; then
+          echo "Error: No backup file specified"
+          return 1
+        fi
+        
+        BACKUP_FILE="$CONFIG_BACKUP_DIR/$1"
+        
+        if [ ! -f "$BACKUP_FILE" ]; then
+          echo "Error: Backup file $BACKUP_FILE does not exist"
+          return 1
+        fi
+        
+        echo "Restoring configuration from $BACKUP_FILE..."
+        
+        # Decrypt if encrypted
+        if [[ "$BACKUP_FILE" == *.enc ]]; then
+          echo "Decrypting backup file..."
+          openssl enc -d -aes-256-gcm -in $BACKUP_FILE -out ${BACKUP_FILE%.enc} -k $BACKUP_ENCRYPTION_KEY
+          BACKUP_FILE=${BACKUP_FILE%.enc}
+        fi
+        
+        # Extract configuration
+        echo "Extracting configuration files..."
+        tar -xzf $BACKUP_FILE -C /
+        
+        echo "Configuration restore completed successfully"
+      }
+      
+      # Function to perform full system recovery
+      full_recovery() {
+        echo "Performing full system recovery..."
+        
+        # Stop all containers
+        echo "Stopping all containers..."
+        docker-compose down
+        
+        # Restore latest backups
+        echo "Restoring latest backups..."
+        
+        # Get latest Redis backup
+        LATEST_REDIS_BACKUP=$(ls -t $REDIS_BACKUP_DIR | head -1)
+        if [ -n "$LATEST_REDIS_BACKUP" ]; then
+          restore_redis $LATEST_REDIS_BACKUP
+        else
+          echo "No Redis backup found"
+        fi
+        
+        # Get latest application data backup
+        LATEST_APP_BACKUP=$(ls -t $APP_BACKUP_DIR | head -1)
+        if [ -n "$LATEST_APP_BACKUP" ]; then
+          restore_app_data $LATEST_APP_BACKUP
+        else
+          echo "No application data backup found"
+        fi
+        
+        # Get latest configuration backup
+        LATEST_CONFIG_BACKUP=$(ls -t $CONFIG_BACKUP_DIR | head -1)
+        if [ -n "$LATEST_CONFIG_BACKUP" ]; then
+          restore_config $LATEST_CONFIG_BACKUP
+        else
+          echo "No configuration backup found"
+        fi
+        
+        # Start all containers
+        echo "Starting all containers..."
+        docker-compose up -d
+        
+        echo "Full system recovery completed successfully"
+      }
+      
+      # Main script
+      case "$1" in
+        list)
+          list_backups
+          ;;
+        redis)
+          restore_redis $2
+          ;;
+        app)
+          restore_app_data $2
+          ;;
+        config)
+          restore_config $2
+          ;;
+        full)
+          full_recovery
+          ;;
+        *)
+          echo "Usage: $0 {list|redis|app|config|full} [backup_file]"
+          echo "  list                  List available backups"
+          echo "  redis [backup_file]   Restore Redis from specified backup file"
+          echo "  app [backup_file]     Restore application data from specified backup file"
+          echo "  config [backup_file]  Restore configuration from specified backup file"
+          echo "  full                  Perform full system recovery using latest backups"
+          exit 1
+          ;;
+      esac
+      
+      exit 0

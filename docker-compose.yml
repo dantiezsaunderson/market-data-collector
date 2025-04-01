@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # Main application service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: market-data-collector
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - FIREBASE_DATABASE_URL=${FIREBASE_DATABASE_URL}
+      - FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}
+      - FIREBASE_SERVICE_ACCOUNT=${FIREBASE_SERVICE_ACCOUNT}
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - ALERT_RECIPIENTS=${ALERT_RECIPIENTS}
+    volumes:
+      - market_data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+    networks:
+      - market_data_network
+
+  # Redis for caching and job queue
+  redis:
+    image: redis:alpine
+    container_name: market-data-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - market_data_network
+
+  # Scheduled job worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: market-data-worker
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - FIREBASE_DATABASE_URL=${FIREBASE_DATABASE_URL}
+      - FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}
+      - FIREBASE_SERVICE_ACCOUNT=${FIREBASE_SERVICE_ACCOUNT}
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - market_data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - app
+    networks:
+      - market_data_network
+
+volumes:
+  market_data:
+  redis_data:
+
+networks:
+  market_data_network:
+    driver: bridge

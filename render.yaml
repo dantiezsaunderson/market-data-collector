@@ -1,0 +1,123 @@
+# render.yaml - Configuration for Render deployment
+services:
+  # Main application service
+  - type: web
+    name: market-data-collector
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: standard
+    numInstances: 1
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: market-data-redis
+          property: connectionString
+      - key: FIREBASE_DATABASE_URL
+        sync: false
+      - key: FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: ALERT_RECIPIENTS
+        sync: false
+      - key: API_RATE_LIMIT
+        value: "100"
+      - key: API_TIMEOUT
+        value: "30000"
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      - key: BYBIT_API_KEY
+        sync: false
+      - key: BYBIT_API_SECRET
+        sync: false
+      - key: DEFAULT_SYMBOLS
+        value: "BTCUSDT,ETHUSDT,SOLUSDT"
+      - key: DEFAULT_TIMEFRAMES
+        value: "1m,5m,15m,1h,4h,1d"
+      - key: DEFAULT_LOOKBACK_DAYS
+        value: "30"
+      - key: MAX_CONCURRENT_REQUESTS
+        value: "5"
+      - key: MONITORING_ENABLED
+        value: "true"
+      - key: ALERT_THRESHOLD_CPU
+        value: "80"
+      - key: ALERT_THRESHOLD_MEMORY
+        value: "80"
+      - key: ALERT_THRESHOLD_DISK
+        value: "80"
+      - key: ALERT_THRESHOLD_ERROR_RATE
+        value: "5"
+
+  # Worker service for background jobs
+  - type: worker
+    name: market-data-worker
+    env: docker
+    dockerfilePath: ./Dockerfile.worker
+    plan: standard
+    numInstances: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: market-data-redis
+          property: connectionString
+      - key: FIREBASE_DATABASE_URL
+        sync: false
+      - key: FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: ALERT_RECIPIENTS
+        sync: false
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      - key: BYBIT_API_KEY
+        sync: false
+      - key: BYBIT_API_SECRET
+        sync: false
+      - key: DEFAULT_SYMBOLS
+        value: "BTCUSDT,ETHUSDT,SOLUSDT"
+      - key: DEFAULT_TIMEFRAMES
+        value: "1m,5m,15m,1h,4h,1d"
+      - key: DEFAULT_LOOKBACK_DAYS
+        value: "30"
+      - key: MAX_CONCURRENT_REQUESTS
+        value: "5"
+      - key: MONITORING_ENABLED
+        value: "true"
+
+# Redis database
+databases:
+  - name: market-data-redis
+    type: redis
+    plan: standard
+    ipAllowList: []  # Only allow internal connections

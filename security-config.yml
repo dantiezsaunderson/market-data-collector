@@ -1,0 +1,117 @@
+# Security Configuration for Docker Deployment
+# This file contains security measures for the Market Data Collector Docker deployment
+
+# Application security configuration
+security:
+  # HTTPS configuration
+  https:
+    enabled: true
+    redirect_http: true
+    hsts_enabled: true
+    hsts_max_age: 31536000 # 1 year
+  
+  # Content Security Policy
+  csp:
+    default_src: ["'self'"]
+    script_src: ["'self'", "'unsafe-inline'", "'unsafe-eval'"]
+    style_src: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"]
+    font_src: ["'self'", "https://fonts.gstatic.com"]
+    img_src: ["'self'", "data:", "https://*"]
+    connect_src: ["'self'", "https://*"]
+  
+  # Rate limiting
+  rate_limiting:
+    enabled: true
+    max_requests: 100
+    window_ms: 60000 # 1 minute
+    message: "Too many requests, please try again later"
+  
+  # Authentication
+  authentication:
+    jwt:
+      enabled: true
+      secret_env_var: "JWT_SECRET"
+      expiration: 86400 # 24 hours
+    session:
+      enabled: false
+  
+  # API security
+  api:
+    require_authentication: true
+    cors:
+      enabled: true
+      allowed_origins: ["https://*.render.com", "https://*.yourdomain.com"]
+      allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+      allowed_headers: ["Content-Type", "Authorization"]
+      expose_headers: ["Content-Length", "X-Request-Id"]
+      max_age: 86400 # 24 hours
+    input_validation:
+      enabled: true
+      sanitize: true
+  
+  # Docker security
+  docker:
+    # Run containers as non-root user
+    user: "node"
+    # Drop all capabilities and only add required ones
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
+    # Enable seccomp profile
+    seccomp_profile: "default"
+    # Read-only root filesystem
+    read_only: true
+    # Mount temporary directories as needed
+    tmpfs:
+      - "/tmp"
+      - "/var/run"
+    # Security options
+    security_opts:
+      - "no-new-privileges:true"
+  
+  # Secrets management
+  secrets:
+    # Environment variables to treat as secrets
+    env_vars:
+      - "JWT_SECRET"
+      - "FIREBASE_SERVICE_ACCOUNT"
+      - "EMAIL_PASSWORD"
+      - "BINANCE_API_SECRET"
+      - "BYBIT_API_SECRET"
+    # Render secret management
+    render:
+      use_env_groups: true
+      env_group_name: "market-data-collector-secrets"
+  
+  # Dependency security
+  dependencies:
+    # Regular security updates
+    auto_update: true
+    # Vulnerability scanning
+    scan_on_build: true
+    # Package lockfile to prevent dependency confusion
+    use_lockfile: true
+    # Audit dependencies during build
+    npm_audit: true
+  
+  # Logging and monitoring
+  logging:
+    # Sensitive data that should be masked in logs
+    mask_fields:
+      - "password"
+      - "token"
+      - "secret"
+      - "key"
+      - "authorization"
+    # Log security events
+    security_events:
+      enabled: true
+      log_authentication: true
+      log_authorization: true
+      log_rate_limit: true
+  
+  # Backup security
+  backup:
+    # Encrypt backups
+    encrypt: true
+    # Encryption key environment variable
+    encryption_key_env_var: "BACKUP_ENCRYPTION_KEY"

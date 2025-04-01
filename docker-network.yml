@@ -1,0 +1,89 @@
+# Docker Networking Configuration
+# This file contains network configuration for the Market Data Collector Docker deployment
+
+# Create a dedicated network for the application
+networks:
+  market_data_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
+    labels:
+      app: "market-data-collector"
+      environment: "production"
+    options:
+      com.docker.network.bridge.name: "market-data-net"
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+
+# Service network configuration
+services:
+  app:
+    networks:
+      market_data_network:
+        ipv4_address: 172.28.1.2
+    ports:
+      - "8080:8080"
+    expose:
+      - "8080"
+    depends_on:
+      - redis
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    dns_search: 
+      - market-data.local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    
+  worker:
+    networks:
+      market_data_network:
+        ipv4_address: 172.28.1.3
+    expose:
+      - "9000"
+    depends_on:
+      - redis
+      - app
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    dns_search: 
+      - market-data.local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    
+  redis:
+    networks:
+      market_data_network:
+        ipv4_address: 172.28.1.4
+    ports:
+      - "6379:6379"
+    expose:
+      - "6379"
+
+# Network security rules
+# Note: These are implemented at the Docker level and in the application code
+security:
+  # Allow only necessary traffic between containers
+  internal_rules:
+    - source: app
+      destination: redis
+      ports: [6379]
+      protocol: tcp
+    - source: worker
+      destination: redis
+      ports: [6379]
+      protocol: tcp
+    - source: worker
+      destination: app
+      ports: [8080]
+      protocol: tcp
+  
+  # External access rules
+  external_rules:
+    - source: external
+      destination: app
+      ports: [8080]
+      protocol: tcp
